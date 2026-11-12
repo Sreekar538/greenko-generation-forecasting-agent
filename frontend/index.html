@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Greenko | Generation Forecast & Variance Agent</title>
+<style>
+:root{--green:#12372a;--green2:#1d6b4b;--bg:#f3f6f4;--ink:#18231e;--muted:#64736b;--line:#dfe7e1;--white:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink)}
+header{background:linear-gradient(120deg,#12372a,#1d6b4b);color:white;padding:28px max(22px,calc((100vw - 1120px)/2))}
+header .eyebrow{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;opacity:.8}
+header h1{font-size:clamp(24px,4vw,36px);margin:9px 0}
+header p{margin:0;color:#d8e9df;max-width:760px;line-height:1.5}
+main{max-width:1120px;margin:24px auto;padding:0 18px 40px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 5px 18px #12372a0a}
+.metric small,.muted{color:var(--muted)}.metric strong{display:block;font-size:25px;margin-top:7px}
+.layout{display:grid;grid-template-columns:1fr 1.1fr;gap:16px;margin-top:16px}
+h2{font-size:18px;margin:0 0 14px}.field{display:flex;flex-direction:column;gap:7px;margin:12px 0}
+label{font-size:13px;font-weight:700}select,button{font:inherit;border-radius:9px;padding:11px 12px}
+select{border:1px solid var(--line);background:white;color:var(--ink)}
+button{background:var(--green);color:white;border:0;font-weight:700;cursor:pointer}button:hover{background:var(--green2)}
+button:disabled{opacity:.55;cursor:wait}
+.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.result{background:#f5f8f6;border:1px solid var(--line);border-radius:10px;padding:12px}
+.result small{display:block;color:var(--muted);font-size:11px}.result strong{display:block;font-size:19px;margin-top:6px}
+.pill{display:inline-block;background:#e8f3ed;color:#18583d;padding:5px 9px;border-radius:99px;font-size:12px;font-weight:700}
+.signal{border-left:3px solid #4d9872;padding:8px 12px;margin:9px 0;background:#f7faf8;border-radius:0 8px 8px 0}
+.signal b{display:block;font-size:13px}.signal span{font-size:12px;color:var(--muted);line-height:1.45}
+pre{white-space:pre-wrap;word-break:break-word;background:#14221b;color:#e7f1eb;padding:14px;border-radius:10px;font-size:12px;overflow:auto}
+.note{font-size:12px;line-height:1.5;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:9px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}}
+@media(max-width:460px){.result-grid{grid-template-columns:1fr}.grid{gap:8px}.card{padding:14px}}
+</style></head>
+<body>
+<header>
+ <div class="eyebrow">Renewable energy • Operations analytics</div>
+ <h1>Power Generation Forecasting & Variance Explanation</h1>
+ <p>Compare supplied generation forecasts with actual output, evaluate a weather-based ML benchmark, and inspect operational signals that may help explain forecast misses.</p>
+</header>
+<main>
+ <section class="grid" id="summary">
+  <div class="card metric"><small>Dataset records</small><strong id="records">—</strong></div>
+  <div class="card metric"><small>Unique dates</small><strong id="dates">—</strong></div>
+  <div class="card metric"><small>Baseline MAE</small><strong id="mae">—</strong></div>
+  <div class="card metric"><small>Baseline RMSE</small><strong id="rmse">—</strong></div>
+ </section>
+ <section class="layout">
+  <div class="card">
+   <h2>Run a holdout example</h2>
+   <p class="note">Select one of the unseen chronological test records. The model was trained on earlier dates only.</p>
+   <div class="field"><label for="record">Test record</label><select id="record"></select></div>
+   <button id="run" onclick="runAnalysis()">Analyze selected record</button>
+   <p class="note" id="status">Loading dataset and evaluation metrics…</p>
+   <div id="recordFacts"></div>
+  </div>
+  <div class="card">
+   <h2>Forecast vs actual</h2>
+   <div class="result-grid">
+    <div class="result"><small>Supplied forecast</small><strong id="forecast">—</strong></div>
+    <div class="result"><small>Actual generation</small><strong id="actual">—</strong></div>
+    <div class="result"><small>ML estimate</small><strong id="ml">—</strong></div>
+   </div>
+   <div style="margin-top:16px">
+    <span class="pill" id="direction">Awaiting analysis</span>
+    <div class="result-grid" style="margin-top:10px">
+     <div class="result"><small>Variance (MWh)</small><strong id="variance">—</strong></div>
+     <div class="result"><small>Variance (%)</small><strong id="variancePct">—</strong></div>
+     <div class="result"><small>Outage flag</small><strong id="outage">—</strong></div>
+    </div>
+   </div>
+  </div>
+ </section>
+ <section class="card" style="margin-top:16px">
+  <h2>Diagnostic agent explanation</h2>
+  <p class="note">A transparent rule-based workflow checks the variance, outage flag, irradiance and temperature. Signals are clues, not proof of causation.</p>
+  <div id="explanation" class="muted">Run an analysis to see the explanation.</div>
+  <div id="signals"></div>
+  <details style="margin-top:14px"><summary>Show agent decision steps</summary><ol id="steps" class="note"></ol></details>
+ </section>
+ <section class="card" style="margin-top:16px">
+  <h2>Holdout evaluation</h2>
+  <p class="note">Metrics are calculated on the last 20% of unique dates, keeping duplicate-date records together.</p>
+  <table><thead><tr><th>Approach</th><th>MAE (MWh)</th><th>RMSE (MWh)</th><th>R²</th></tr></thead>
+   <tbody><tr><td>Supplied forecast baseline</td><td id="baseMae">—</td><td id="baseRmse">—</td><td id="baseR2">—</td></tr>
+   <tr><td>Random Forest (weather features)</td><td id="rfMae">—</td><td id="rfRmse">—</td><td id="rfR2">—</td></tr></tbody>
+  </table>
+  <p class="note" id="comparison"></p>
+ </section>
+ <section class="card" style="margin-top:16px">
+  <h2>Limitations to remember</h2>
+  <ul class="note">
+   <li>The supplied dataset is small and described as dummy data in the assignment.</li>
+   <li>It has two records per date but no plant or asset identifier.</li>
+   <li>It does not contain separate forecast-weather and observed-weather values.</li>
+   <li>Rule-based indicators do not prove the cause of a generation variance.</li>
+   <li>This demo does not call an external LLM and does not implement RAG.</li>
+  </ul>
+ </section>
+</main>
+<footer>Greenko AI/ML case study prototype • FastAPI + Python + scikit-learn</footer>
+<script>
+let records=[];
+const fmt=(v,d=2)=>Number(v).toFixed(d);
+async function init(){
+ try{
+  const [demoRes,recordsRes]=await Promise.all([fetch('/api/demo'),fetch('/api/records')]);
+  if(!demoRes.ok||!recordsRes.ok) throw new Error('Could not load API data');
+  const demo=await demoRes.json(); records=(await recordsRes.json()).records;
+  document.getElementById('records').textContent=demo.dataset.records;
+  document.getElementById('dates').textContent=demo.dataset.unique_dates;
+  const base=demo.metrics.supplied_forecast_baseline, rf=demo.metrics.random_forest_weather_model;
+  document.getElementById('mae').textContent=fmt(base.mae_mwh)+' MWh';
+  document.getElementById('rmse').textContent=fmt(base.rmse_mwh)+' MWh';
+  for(const [id,val] of Object.entries({baseMae:base.mae_mwh,baseRmse:base.rmse_mwh,baseR2:base.r2,rfMae:rf.mae_mwh,rfRmse:rf.rmse_mwh,rfR2:rf.r2}))
+    document.getElementById(id).textContent=val;
+  document.getElementById('comparison').textContent=
+    base.mae_mwh<=rf.mae_mwh
+    ? 'The supplied forecast baseline has lower MAE on this holdout set. The Random Forest is retained as an experimental comparison, not presented as an improvement.'
+    : 'The Random Forest has lower MAE on this holdout set; more data and repeated validation are still needed.';
+  const select=document.getElementById('record');
+  records.forEach(r=>{const o=document.createElement('option');o.value=r.row_index;o.textContent=`${r.date} | forecast ${r.forecast_mwh} MWh | actual ${r.actual_mwh} MWh`;select.appendChild(o)});
+  document.getElementById('status').textContent=`Loaded ${records.length} chronological holdout examples.`;
+  if(records.length) showFacts(records[0]);
+ }catch(e){document.getElementById('status').textContent='API error: '+e.message+'. Start the FastAPI server and refresh.'}
+}
+function showFacts(r){
+ document.getElementById('recordFacts').innerHTML=`<p class="note">Irradiance: ${r.irradiance_wm2} W/m² · Wind: ${r.wind_speed_ms} m/s · Temperature: ${r.temperature_c} °C</p>`;
+}
+document.getElementById('record').addEventListener('change',()=>{const r=records.find(x=>x.row_index==document.getElementById('record').value);if(r)showFacts(r)});
+async function runAnalysis(){
+ const btn=document.getElementById('run');btn.disabled=true;btn.textContent='Analyzing…';
+ try{
+  const res=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({row_index:Number(document.getElementById('record').value)})});
+  const data=await res.json();if(!res.ok)throw new Error(data.detail||'Request failed');
+  document.getElementById('forecast').textContent=fmt(data.forecast_mwh)+' MWh';
+  document.getElementById('actual').textContent=fmt(data.actual_mwh)+' MWh';
+  document.getElementById('ml').textContent=fmt(data.random_forest_estimate_mwh)+' MWh';
+  document.getElementById('variance').textContent=fmt(data.variance.variance_mwh);
+  document.getElementById('variancePct').textContent=fmt(data.variance.variance_percent)+'%';
+  document.getElementById('outage').textContent=data.record.outage_flag?'Yes':'No';
+  document.getElementById('direction').textContent=data.variance.variance_mwh>0?'Actual above forecast':data.variance.variance_mwh<0?'Actual below forecast':'Forecast matched actual';
+  document.getElementById('explanation').textContent=data.diagnostic.explanation;
+  document.getElementById('signals').innerHTML=data.diagnostic.signals.map(s=>`<div class="signal"><b>${s.signal}</b><span>${s.observation}<br>${s.interpretation}</span></div>`).join('');
+  document.getElementById('steps').innerHTML=data.diagnostic.decision_steps.map(s=>`<li>${s}</li>`).join('');
+  const r=records.find(x=>x.row_index==data.record.row_index);if(r)showFacts(r);
+  document.getElementById('status').textContent=`Analysis complete for ${data.record.date}.`;
+ }catch(e){document.getElementById('status').textContent='Analysis error: '+e.message}
+ finally{btn.disabled=false;btn.textContent='Analyze selected record'}
+}
+init();
+</script>
+</body></html>

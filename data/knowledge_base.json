@@ -1,0 +1,32 @@
+﻿[
+  {
+    "id": "KB001",
+    "title": "Solar irradiance and generation",
+    "content": "Solar irradiance is the amount of solar power received per unit area. Solar photovoltaic generation generally increases with available irradiance, subject to system efficiency, temperature, equipment condition, shading, and other operating factors. Lower irradiance can be associated with lower solar generation, but it does not independently prove the cause of a generation variance."
+  },
+  {
+    "id": "KB002",
+    "title": "High temperature and solar equipment",
+    "content": "High ambient temperature can reduce photovoltaic module efficiency under typical operating conditions. The actual impact depends on module characteristics, system design, ventilation, and operating conditions. A high temperature reading alone cannot establish that temperature caused a generation shortfall."
+  },
+  {
+    "id": "KB003",
+    "title": "Equipment outage and generation",
+    "content": "An equipment or plant outage can reduce available generation capacity during the affected period. An outage flag indicates that an outage was recorded in the dataset. The flag does not identify the equipment, outage duration, or exact energy impact unless those details are separately available."
+  },
+  {
+    "id": "KB004",
+    "title": "Wind speed and wind generation",
+    "content": "Wind turbine power output depends on wind speed and the turbine power curve. Output is generally low below cut-in speed, increases over the operating range, and may stop at cut-out speed for protection. Wind speed alone is insufficient to estimate actual generation without turbine specifications and operating status."
+  },
+  {
+    "id": "KB005",
+    "title": "Forecast variance interpretation",
+    "content": "Generation variance can be calculated as actual generation minus forecast generation. A positive variance means actual generation exceeded the forecast. A negative variance means actual generation was below forecast. Variance percentage is calculated relative to forecast generation and should be interpreted carefully when the forecast is zero or very small."
+  },
+  {
+    "id": "KB006",
+    "title": "Operational data limitations",
+    "content": "Operational indicators can help identify conditions associated with generation differences, but correlation does not establish causation. Reliable root-cause analysis may require plant identifiers, equipment telemetry, maintenance records, outage duration, weather forecast data, and observed weather data."
+  }
+]

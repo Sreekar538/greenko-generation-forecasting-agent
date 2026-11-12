@@ -1,104 +1,356 @@
-# Power Generation Forecasting & Variance Explanation Agent
 
-A runnable Greenko AI/ML case-study prototype using the bundled dummy dataset.
+# Greenko Generation Forecasting & Variance Explanation Agent
 
-## What it does
+A renewable energy forecasting and variance analysis prototype developed for the Greenko AI/ML case study. The application combines machine learning, rule-based operational diagnostics, TF-IDF-based Retrieval-Augmented Generation (RAG), and Google Gemini to explain generation variances.
 
-1. Loads and validates the energy-generation CSV.
-2. Splits records chronologically by unique date (80% earlier dates for training, 20% later dates for testing).
-3. Evaluates the supplied forecast against actual generation.
-4. Trains a Random Forest regression model using irradiance, wind speed, temperature and outage flag as features.
-5. Compares the ML model with the supplied forecast baseline using MAE, RMSE and R².
-6. Calculates variance as `actual_mwh - forecast_mwh`.
-7. Runs a transparent rule-based diagnostic workflow that checks outage, irradiance and temperature indicators.
-8. Displays the results in a browser dashboard.
+## 1. Project Overview
 
-## Important interpretation
+The system analyzes actual versus forecasted power generation, identifies operational indicators associated with generation differences, retrieves relevant renewable-energy reference knowledge, and generates natural-language explanations.
 
-The supplied `forecast_mwh` column is the operational forecast benchmark in this dataset. The Random Forest is an experimental weather-feature model trained to estimate `actual_mwh`. It is compared against the supplied forecast; it is not assumed to be better.
+### Key Features
 
-The bundled data contains 60 rows over 30 dates, with two records per date. It has no plant/asset identifier, so the project does not assume that the two rows represent particular plants. The dataset has no separate forecast-weather and observed-weather fields. Therefore, the diagnostic checks identify possible signals, not proven causes.
+1. CSV data loading, validation, and preprocessing.
+2. Chronological training and testing split.
+3. Random Forest regression model.
+4. Supplied forecast baseline evaluation.
+5. MAE, RMSE, and R² model evaluation.
+6. Actual-versus-forecast variance calculation.
+7. Rule-based operational signal detection.
+8. TF-IDF-based knowledge retrieval.
+9. Google Gemini-generated explanations using retrieved context.
+10. Fallback explanations when Gemini is unavailable.
+11. FastAPI backend and browser-based dashboard.
 
-The current diagnostic component is a deterministic, rule-based workflow. It does **not** call an external LLM and does **not** use RAG. This is stated explicitly rather than claiming GenAI functionality that is not implemented. An LLM can be added later behind an environment-variable-based provider integration.
+## 2. Technology Stack
 
-## Architecture
+| Component | Technology |
+|---|---|
+| Programming language | Python |
+| Data processing | Pandas, NumPy |
+| Machine learning | Scikit-learn |
+| RAG retrieval | TF-IDF, Cosine Similarity |
+| Generative AI | Google Gemini |
+| Backend | FastAPI |
+| Frontend | HTML, CSS, JavaScript |
+| API documentation | Swagger UI |
+| Version control | Git, GitHub |
 
-`CSV -> validation/preprocessing -> chronological train/test split -> Random Forest benchmark + supplied forecast baseline -> variance calculation -> rule-based diagnostic tools -> FastAPI -> HTML dashboard`
+## 3. Project Architecture
 
-## Requirements
+```text
+Generation Forecast CSV
+          |
+          v
+Data Loading and Validation
+          |
+          v
+Chronological Train-Test Split
+          |
+          v
+Random Forest Model
+          |
+          v
+Forecast and Actual Comparison
+          |
+          v
+Variance Calculation
+          |
+          v
+Rule-Based Diagnostics
+          |
+          v
+Operational Context Preparation
+          |
+          v
+TF-IDF Knowledge Retrieval
+          |
+          v
+Retrieved Reference Documents
+          |
+          v
+Google Gemini Explanation
+          |
+          v
+FastAPI JSON Response
+          |
+          v
+Browser Dashboard
+```
 
-- Python 3.10+
-- pip
+## 4. Dataset
 
-## Run locally (Windows PowerShell)
+The project uses the bundled sample generation dataset:
 
-From the project root:
+`data/generation_forecast.csv`
+
+### Input Features
+
+- `irradiance_wm2`: Solar irradiance.
+- `wind_speed_ms`: Wind speed.
+- `temperature_c`: Temperature.
+- `outage_flag`: Recorded outage indicator.
+
+### Target Variable
+
+- `actual_mwh`: Actual power generation.
+
+### Forecast Benchmark
+
+- `forecast_mwh`: Supplied operational forecast.
+
+The dataset contains 60 records across 30 dates, with two records per date.
+
+## 5. Machine Learning Model
+
+The project uses a Random Forest Regressor to estimate actual generation from weather and outage features.
+
+### Model Configuration
+
+- `n_estimators = 100`
+- `max_depth = 3`
+- `min_samples_leaf = 2`
+- `random_state = 42`
+
+### Data Splitting
+
+- First 80% of unique chronological dates: Training.
+- Final 20% of unique chronological dates: Testing.
+- Records sharing the same date remain in the same split.
+
+### Evaluation Metrics
+
+- MAE: Mean Absolute Error.
+- RMSE: Root Mean Squared Error.
+- R²: Coefficient of Determination.
+
+### Current Evaluation Results
+
+| Metric | Supplied Forecast | Random Forest |
+|---|---:|---:|
+| MAE (MWh) | 4.604 | 7.281 |
+| RMSE (MWh) | 5.169 | 8.762 |
+| R² | 0.859 | 0.594 |
+
+The supplied forecast performs better than the experimental Random Forest model on the current holdout dataset. The project reports this comparison transparently rather than claiming that the ML model is superior.
+
+## 6. Variance Calculation
+
+The system calculates generation variance using:
+
+`variance_mwh = actual_mwh - forecast_mwh`
+
+Interpretation:
+
+- Positive variance: Actual generation exceeded forecast.
+- Negative variance: Actual generation was below forecast.
+- Zero variance: Actual generation matched forecast.
+
+Variance percentage is calculated relative to forecast generation.
+
+## 7. Operational Diagnostic Workflow
+
+The rule-based diagnostic component checks:
+
+1. Recorded equipment outage.
+2. Lower solar irradiance (below 450 W/m²).
+3. High recorded temperature (above 38°C).
+
+These indicators provide operational context. They do not establish that a particular factor caused the generation variance.
+
+## 8. Retrieval-Augmented Generation (RAG)
+
+The project implements a small local knowledge base:
+
+`data/knowledge_base.json`
+
+It contains six general renewable-energy reference documents covering:
+
+- Solar irradiance and generation.
+- High temperature and solar equipment.
+- Equipment outages.
+- Wind speed and wind generation.
+- Forecast variance interpretation.
+- Operational data limitations.
+
+### RAG Workflow
+
+1. Prepare a query from the selected operational record and its diagnostic context.
+2. Load the local knowledge-base documents.
+3. Convert document text into TF-IDF vectors.
+4. Convert the operational query into a TF-IDF vector.
+5. Calculate cosine similarity.
+6. Rank documents by relevance.
+7. Retrieve the top two relevant documents.
+8. Pass the retrieved reference knowledge and operational data to Gemini.
+
+The API response includes the retrieved document IDs, titles, content, and similarity scores.
+
+The knowledge base contains general reference guidance, not Greenko internal documentation.
+
+## 9. Google Gemini Integration
+
+Google Gemini generates natural-language explanations using:
+
+- Actual generation.
+- Forecast generation.
+- Calculated variance.
+- Recorded operational indicators.
+- Retrieved RAG reference documents.
+
+### Safety and Reliability
+
+- API credentials are loaded from environment variables.
+- The application avoids unsupported causal claims.
+- Retrieved knowledge is treated as general reference guidance.
+- A rule-based fallback is provided if Gemini is unavailable.
+- External API failures are handled without stopping variance calculations.
+
+## 10. FastAPI Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Dashboard |
+| `/api/demo` | GET | Dataset and model information |
+| `/api/records` | GET | Chronological holdout records |
+| `/api/run` | POST | Forecast, variance, diagnostics, RAG and Gemini |
+| `/docs` | GET | Interactive Swagger documentation |
+
+### API Test Example
+
+Request:
+
+```json
+{
+  "row_index": 48
+}
+```
+
+Example verified output:
+
+- Forecast: 51.42 MWh.
+- Actual: 56.80 MWh.
+- Variance: +5.38 MWh.
+- Variance percentage: +10.46%.
+- Retrieved documents: 2.
+- Gemini status: success (during the verified test).
+
+The API accepts only row indexes belonging to the chronological holdout dataset.
+
+## 11. Local Installation and Execution
+
+### Requirements
+
+- Python 3.10 or later.
+- pip.
+- Google Gemini API key for external LLM explanations.
+
+### Windows PowerShell Setup
+
+Clone the repository:
+
+```powershell
+git clone https://github.com/Sreekar538/greenko-generation-forecasting-agent.git
+cd greenko-generation-forecasting-agent
+```
+
+Create and activate a virtual environment:
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-uvicorn backend.app:app --reload
 ```
 
-Open:
-
-- Dashboard: http://127.0.0.1:8000
-- API demo/metrics: http://127.0.0.1:8000/api/demo
-- Holdout records: http://127.0.0.1:8000/api/records
-- Interactive API docs: http://127.0.0.1:8000/docs
-
-## API example
+Install dependencies:
 
 ```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:8000/api/run -Method Post -ContentType "application/json" -Body '{"row_index":48}'
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-The API only accepts row indexes in the chronological holdout set, to keep the interactive example out-of-sample.
+### Configure Environment Variables
 
-## Evaluation method
+Create a `.env` file in the project root:
 
-- Unique dates are sorted chronologically.
-- The first 80% of unique dates are training data.
-- The final 20% are holdout test data.
-- Duplicate-date rows stay in the same split.
-- MAE and RMSE are reported in MWh; R² is also reported.
-- The supplied forecast is evaluated as a baseline.
-- The Random Forest uses `n_estimators=100`, `max_depth=3`, `min_samples_leaf=2`, and `random_state=42`.
+```text
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.5-flash-lite
+```
 
-On the bundled dataset and current split, the supplied forecast baseline performs better than the initial Random Forest weather-only comparison. Treat these results as preliminary because the dataset is small and synthetic/dummy.
+Never commit the `.env` file to GitHub.
 
-## Variance convention
+### Start the Application
 
-`variance_mwh = actual_mwh - forecast_mwh`
+```powershell
+uvicorn backend.app:app --reload --port 8000
+```
 
-- Positive: actual generation was higher than forecast.
-- Negative: actual generation was lower than forecast.
-- Percentage: `(variance_mwh / forecast_mwh) * 100`.
+Open the application:
 
-## Diagnostic workflow tools
+- Dashboard: http://127.0.0.1:8000
+- API documentation: http://127.0.0.1:8000/docs
+- Demo information: http://127.0.0.1:8000/api/demo
+- Holdout records: http://127.0.0.1:8000/api/records
 
-1. `calculate_variance`: computes absolute and percentage variance.
-2. `inspect_operational_signals`: checks outage flag, lower irradiance and high temperature.
-3. `compose_grounded_explanation`: creates a cautious explanation from observed values.
+If port 8000 is occupied, use:
 
-These rules are transparent heuristics, not a trained causal model. Thresholds should be validated with domain experts and more operational data before production use.
+```powershell
+uvicorn backend.app:app --reload --port 8001
+```
 
-## Limitations and next improvements
+Then use port 8001 in the browser.
 
-- Small dummy dataset; obtain more historical data from multiple assets and seasons.
-- Add plant/asset identifiers and clear units/metadata.
-- Add forecast weather and actual weather to investigate forecast misses more reliably.
-- Compare additional models and tune using time-series cross-validation.
-- Add uncertainty intervals and drift monitoring.
-- Add an optional LLM explanation layer with strict grounding, output validation, key management and failure fallback.
-- Add authentication, logging, automated tests and production monitoring.
+## 12. Project Limitations
 
-## Railway deployment
+- The bundled dataset is small and marked as dummy data.
+- There are no plant or asset identifiers.
+- There are no separate forecast-weather and observed-weather fields.
+- The Random Forest model does not outperform the supplied forecast baseline.
+- Operational thresholds are simple heuristics.
+- The local RAG knowledge base contains only six general reference documents.
+- TF-IDF retrieval depends on the available knowledge-base content.
+- Gemini availability depends on the external API.
+- The project is a case-study prototype, not a production-ready operational platform.
 
-1. Push this project to a GitHub repository.
-2. Create a Railway project and deploy from the GitHub repository.
-3. Railway uses the included `Procfile` to start the app.
-4. Confirm the generated public URL serves the dashboard and `/api/demo`.
-5. Keep credentials out of source control; use Railway variables if adding an external LLM later.
+## 13. Future Improvements
+
+- Add larger historical generation datasets.
+- Include plant and equipment identifiers.
+- Improve feature engineering and time-series model evaluation.
+- Expand and validate the operational knowledge base.
+- Evaluate retrieval quality using a labelled test set.
+- Add RAG source citations and stronger response validation.
+- Add authentication, logging, and monitoring.
+- Deploy the application using a suitable hosting platform.
+
+## 14. Repository Structure
+
+```text
+greenko-generation-forecasting-agent/
+|
+|-- backend/
+|   |-- app.py
+|
+|-- data/
+|   |-- generation_forecast.csv
+|   |-- knowledge_base.json
+|
+|-- frontend/
+|   |-- index.html
+|   |-- style.css
+|   |-- script.js
+|
+|-- .env
+|-- .gitignore
+|-- Procfile
+|-- README.md
+|-- requirements.txt
+|-- runtime.txt
+```
+
+The `.env` file is local configuration and must not be committed to the repository.
+
+## 15. Conclusion
+
+This project demonstrates an integrated renewable-energy generation analysis workflow combining machine learning, rule-based diagnostics, local knowledge retrieval, generative AI, and API-based delivery.
+
+It provides transparent forecast variance calculations and contextual explanations while clearly communicating model performance and data limitations.

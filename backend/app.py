@@ -1,5 +1,6 @@
 
 from pathlib import Path
+import json
 from typing import Any
 import os
 
@@ -15,6 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
@@ -67,10 +70,80 @@ TARGET = "actual_mwh"
 
 
 # --------------------------------------------------
+# 3. RAG KNOWLEDGE RETRIEVAL
+# --------------------------------------------------
+
+KNOWLEDGE_BASE_PATH = BASE / "data" / "knowledge_base.json"
+
+
+def retrieve_knowledge(query: str, top_k: int = 2) -> list[dict]:
+
+    if not KNOWLEDGE_BASE_PATH.exists():
+        print("RAG knowledge base not found.")
+        return []
+
+    try:
+        with open(KNOWLEDGE_BASE_PATH, "r", encoding="utf-8-sig") as file:
+            documents = json.load(file)
+
+        if not documents:
+            return []
+
+        corpus = [
+            f"{doc['title']} {doc['content']}"
+            for doc in documents
+        ]
+
+        vectorizer = TfidfVectorizer(
+            stop_words="english"
+        )
+
+        document_vectors = vectorizer.fit_transform(corpus)
+        query_vector = vectorizer.transform([query])
+
+        similarities = cosine_similarity(
+            query_vector,
+            document_vectors
+        ).flatten()
+
+        ranked_indices = similarities.argsort()[::-1]
+
+        results = []
+
+        for index in ranked_indices:
+            score = float(similarities[index])
+
+            if score <= 0:
+                continue
+
+            doc = documents[index]
+
+            results.append({
+                "id": doc["id"],
+                "title": doc["title"],
+                "content": doc["content"],
+                "similarity": round(score, 4)
+            })
+
+            if len(results) >= top_k:
+                break
+
+        return results
+
+    except Exception as error:
+        print(f"RAG retrieval failed: {type(error).__name__}: {error}")
+        return []
+
+
+# --------------------------------------------------
 # 3. GEMINI LLM EXPLANATION
 # --------------------------------------------------
 
-def generate_llm_explanation(context: str) -> tuple[str, str]:
+
+def generate_llm_explanation(
+    context: str,
+    retrieved_knowledge: list[dict] | None = None
+) -> tuple[str, str]:
 
     if gemini_client is None:
         return (
@@ -79,19 +152,36 @@ def generate_llm_explanation(context: str) -> tuple[str, str]:
             "not_configured"
         )
 
+    knowledge_context = "\n\n".join(
+        f"[{doc['id']}] {doc['title']}: {doc['content']}"
+        for doc in (retrieved_knowledge or [])
+    )
+
+    if not knowledge_context:
+        knowledge_context = (
+            "No relevant knowledge-base documents were retrieved. "
+            "Use only the supplied operational data."
+        )
+
     prompt = f"""
 You are an assistant for renewable energy operations.
 
-Analyze the generation variance using only the supplied data.
+Analyze generation variance using the supplied operational data
+and retrieved reference knowledge.
 
 Requirements:
 1. Explain whether actual generation was above or below forecast.
-2. Mention the variance in MWh and percentage.
+2. Mention variance in MWh and percentage.
 3. Discuss relevant recorded operational indicators.
-4. Never invent missing information.
-5. Do not claim that an indicator proves causation.
-6. Clearly mention uncertainty.
-7. Keep the explanation between 2 and 4 sentences.
+4. Use retrieved knowledge only as general reference guidance.
+5. Never invent missing information.
+6. Do not claim that an indicator proves causation.
+7. Clearly mention uncertainty.
+8. Keep the explanation between 2 and 4 sentences.
+
+Retrieved reference knowledge:
+
+{knowledge_context}
 
 Operational data:
 
@@ -103,9 +193,7 @@ Operational data:
             model=GEMINI_MODEL,
             contents=prompt,
             config={
-                "http_options": {
-                    "timeout": 12000
-                },
+                "http_options": {"timeout": 12000},
                 "max_output_tokens": 250,
                 "temperature": 0.2
             }
@@ -121,7 +209,6 @@ Operational data:
         )
 
     except Exception as error:
-
         print(
             f"Gemini API request failed: "
             f"{type(error).__name__}: {error}"
@@ -613,6 +700,7 @@ def records():
 # 16. MAIN FORECAST AND VARIANCE ENDPOINT
 # --------------------------------------------------
 
+
 @app.post("/api/run")
 def run_case(request: RunRequest):
 
@@ -621,10 +709,8 @@ def run_case(request: RunRequest):
     ]
 
     if selected.empty:
-
         raise HTTPException(
             status_code=404,
-
             detail=(
                 "Choose a row from the chronological "
                 "holdout records shown in the dashboard."
@@ -633,19 +719,19 @@ def run_case(request: RunRequest):
 
     row = selected.iloc[0]
 
-    # Calculate forecast variance
+    # 1. Calculate forecast variance
     variance = calculate_variance(
         float(row["forecast_mwh"]),
         float(row["actual_mwh"])
     )
 
-    # Run rule-based diagnostic workflow
+    # 2. Run rule-based diagnostic workflow
     diagnostics = run_diagnostic_agent(
         row,
         variance
     )
 
-    # Prepare context for Gemini
+    # 3. Prepare operational context
     context = f"""
 Date: {row['date'].strftime('%Y-%m-%d')}
 
@@ -670,12 +756,19 @@ Rule-based signals: {diagnostics['signals']}
 Rule-based explanation: {diagnostics['explanation']}
 """
 
-    # Call Gemini with a short timeout and safe fallback
-    llm_explanation, llm_status = generate_llm_explanation(
-        context
+    # 4. Retrieve relevant knowledge using RAG
+    retrieved_knowledge = retrieve_knowledge(
+        context,
+        top_k=2
     )
 
-    # Return complete result
+    # 5. Generate Gemini explanation using retrieved knowledge
+    llm_explanation, llm_status = generate_llm_explanation(
+        context,
+        retrieved_knowledge
+    )
+
+    # 6. Return complete API response
     return {
 
         "record": serialize_record(
@@ -699,13 +792,18 @@ Rule-based explanation: {diagnostics['explanation']}
 
         "diagnostic": diagnostics,
 
+        "rag": {
+            "retrieval_enabled": True,
+            "documents_retrieved": len(retrieved_knowledge),
+            "retrieved_documents": retrieved_knowledge
+        },
+
         "llm_explanation": llm_explanation,
 
         "llm_status": llm_status,
 
         "evaluation": {
             "supplied_forecast_baseline": BASELINE_METRICS,
-
             "random_forest_weather_model": ML_METRICS
         },
 
@@ -718,6 +816,10 @@ Rule-based explanation: {diagnostics['explanation']}
 
             "Threshold-based signals are indicators, not proof that a factor caused the variance.",
 
-            "The diagnostic workflow uses rule-based checks and Gemini for natural-language explanations. It does not implement RAG."
+            "The knowledge base contains general renewable-energy reference guidance, not Greenko internal documentation.",
+
+            "RAG uses TF-IDF retrieval over a small local knowledge base. Retrieval quality depends on the available documents.",
+
+            "Gemini availability is subject to external API availability. A rule-based fallback is provided."
         ]
     }
